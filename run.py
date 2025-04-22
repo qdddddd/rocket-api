@@ -81,13 +81,18 @@ def main(logger: logging.Logger) -> int:
         logger.info("Found %d existing task(s) with mission name `%s`", len(tasks), MISSION_NAME)
 
         for task in tasks:
-            if task["TimeFrame"]["DateEnd"] < end_date:
-                req_body = {"date_end": end_date, "mission_id": task["MissionID"]}
-                logger.info("Task `%s` is expandable to %s", req_body["mission_id"], end_date)
+            mission_id = task["MissionID"]
+            task_end_date = task["TimeFrame"]["DateEnd"]
+
+            if task_end_date < end_date:
+                req_body = {"date_end": end_date, "mission_id": mission_id}
+                logger.info("Task `%s` is expandable to %s", mission_id, end_date)
                 rsp = svr.expand_backtest(req_body)
                 if rsp["code"] != 0:
                     raise ValueError(f"Run backtest failed: {rsp['data'][0]['detail']}")
-                logger.info("Sucessfully sent task `%s` expanding to %s", req_body["mission_id"], req_body["date_end"])
+                logger.info("Sucessfully sent task `%s` expanding to %s", mission_id, req_body["date_end"])
+            else:
+                logger.info("Task `%s` is already up to date (%s)", mission_id, task_end_date)
         return 0
 
     # Build new task
@@ -155,6 +160,7 @@ def main(logger: logging.Logger) -> int:
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     setup_logging()
+    logger.info("Start building optimization tasks on Rocket")
 
     code = main(logger)
     if code == 0:
