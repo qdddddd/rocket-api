@@ -75,10 +75,10 @@ def main(logger: logging.Logger) -> int:
     logger.info("Found predictions in table `%s` from %s to %s", PRED_TABLE, start_date, end_date)
 
     # Check existing tasks and expand
-    tasks = list(filter(lambda x: x["MissionName"] == MISSION_NAME, svr.get_mission_list()["data"]))
+    tasks = list(filter(lambda x: MISSION_NAME + "|" in x["MissionName"], svr.get_mission_list()["data"]))
 
     if tasks:
-        logger.info("Found %d existing task(s) with mission name `%s`", len(tasks), MISSION_NAME)
+        logger.info("Found %d existing task(s) with mission name starting with `%s`", len(tasks), MISSION_NAME)
 
         for task in tasks:
             mission_id = task["MissionID"]
@@ -104,55 +104,62 @@ def main(logger: logging.Logger) -> int:
         assert isinstance(param, dict)
         param.update({"amount": OPT_PARAM_AMOUNT, "restrictSt": key})
 
-    req_body = {
-        "MissionName": MISSION_NAME,
-        "TimeFrame": {"DateStart": start_date, "DateEnd": end_date},
-        "SampleScope": {"ExchID": ["SS", "SZ"]},
-        "RiskModel": "Multi10",
-        "PredSource": [{"tableName": PRED_TABLE, "stName": PRED_VERSION, "weight": 1}],
-        "TradedPriceType": "VWAPPriceNoLimit",
-        "OrderType": {},
-        "Groups": [
-            opt_param_sets["AshareMF-On-AM-EE-CSI1000"],
-            opt_param_sets["AshareMF-On-AM-EE-CSI500"],
-            opt_param_sets["AshareMF-On-AM-LO"],
-            opt_param_sets["AshareMF-On-Res-Index-T0"],
-            opt_param_sets["AshareMF-On-Res-Index-T1"],
-            {
-                "name": "CSI1000-Moderate",
-                "prePos": None,
-                "orderType": None,
-                "restrictSt": "AshareMF-On-AM-LO",
-                "mvLb": -0.5,
-                "mvUb": 0.5,
-                "idstLb": -0.05,
-                "idstUb": 0.05,
-                "benchWeight": {"000852.SH": 1},
-                "amount": 10_000_000_000,
-                "rho": 0.0018,
-                "tradeLimit": 0.07,
-                "hedgeRatio": 0,
-                "shrinkage": 0.3,
-                "am": [0.3],
-                "hm": [0.5],
-                "maxStockWeight": [0.007],
-                "q": [0.1],
-                "p": [0.5],
-                "b": [1.6],
-            },
-        ],
-        "Departure": "pred",
-        # 实际仓位或目标仓位上传自定义文件时传入接口返回的 id 值
-        "MissionID": "",
-        "for_real": False,
-    }
-    logger.info("Constructed backtest config: %s", req_body)
+    groups = [
+        opt_param_sets["AshareMF-On-AM-EE-CSI1000"],
+        opt_param_sets["AshareMF-On-AM-EE-CSI500"],
+        opt_param_sets["AshareMF-On-AM-LO"],
+        opt_param_sets["AshareMF-On-Res-Index-T0"],
+        opt_param_sets["AshareMF-On-Res-Index-T1"],
+        {
+            "name": "CSI1000-Moderate",
+            "prePos": None,
+            "orderType": None,
+            "restrictSt": "AshareMF-On-AM-LO",
+            "mvLb": -0.5,
+            "mvUb": 0.5,
+            "idstLb": -0.05,
+            "idstUb": 0.05,
+            "benchWeight": {"000852.SH": 1},
+            "amount": 10_000_000_000,
+            "rho": 0.0018,
+            "tradeLimit": 0.07,
+            "hedgeRatio": 0,
+            "shrinkage": 0.3,
+            "am": [0.3],
+            "hm": [0.5],
+            "maxStockWeight": [0.007],
+            "q": [0.1],
+            "p": [0.5],
+            "b": [1.6],
+        },
+    ]
+
+    requests = [
+        {
+            "MissionName": f"{MISSION_NAME}|{group['name']}",
+            "TimeFrame": {"DateStart": start_date, "DateEnd": end_date},
+            "SampleScope": {"ExchID": ["SS", "SZ"]},
+            "RiskModel": "Multi10",
+            "PredSource": [{"tableName": PRED_TABLE, "stName": PRED_VERSION, "weight": 1}],
+            "TradedPriceType": "VWAPPriceNoLimit",
+            "OrderType": {},
+            "Groups": [group],
+            "Departure": "pred",
+            # 实际仓位或目标仓位上传自定义文件时传入接口返回的 id 值
+            "MissionID": "",
+            "for_real": False,
+        }
+        for group in groups
+    ]
+
+    logger.info("Constructed backtest configs: %s", requests)
 
     # Send request
-    rsp = svr.run_backtest(req_body)
-    if rsp["code"] != 0:
-        raise ValueError(f"Run backtest failed: {rsp['data'][0]['detail']}")
-    logger.info("Sucessfully sent task with mission id `%s`", rsp["data"][0]["missionId"])
+    for req in requests:
+        rsp = svr.run_backtest(req)
+        if rsp["code"] != 0:
+            raise ValueError(f"Run backtest failed: {rsp['data'][0]['detail']}")
+        logger.info("Sucessfully sent task with mission id `%s`", rsp["data"][0]["missionId"])
     return 0
 
 
